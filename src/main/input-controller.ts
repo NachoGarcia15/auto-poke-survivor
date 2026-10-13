@@ -238,4 +238,24 @@ export class InputController {
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+
+  // src/main/input-controller.ts
+
+  /**
+   * Simula un clic del ratón sobre un elemento del DOM usando un selector CSS
+   */
+  public async clickElement(selector: string): Promise<boolean> {
+    if (!this.webContents) return false;
+    
+    return await this.webContents.executeJavaScript(`
+      (() => {
+        const el = document.querySelector('${selector}');
+        if (el) {
+          (el as HTMLElement).click();
+          return true;
+        }
+        return false;
+      })()
+    `).catch(() => false);
+  }
 }

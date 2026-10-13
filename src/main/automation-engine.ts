@@ -153,6 +153,9 @@ export class AutomationEngine {
   /**
    * One iteration of the observation-action loop
    */
+  /**
+   * One iteration of the observation-action loop
+   */
   private async loop(): Promise<void> {
     if (this.state !== AutomationState.RUNNING) return;
 
@@ -177,7 +180,50 @@ export class AutomationEngine {
       // 4. Emit state to UI
       this.emitGameState(gameState);
 
-      // 5. Decide
+      // --- INTERVENCIÓN PARA MENÚS ---
+      const currentScreen = gameState.screen.value;
+      
+      // Si estamos en un menú inactivo o de derrota, simplemente pausamos la ejecución
+      // del bot de movimiento y esperamos a que el usuario interactúe.
+      if (currentScreen === GameScreen.MAIN_MENU || currentScreen === GameScreen.GAME_OVER) {
+        this.consecutiveErrors = 0;
+        return; 
+      }
+      
+      // AUTO LEVEL UP: Priorizar mejoras de habilidades existentes
+      if (currentScreen === GameScreen.UPGRADE_SELECT) {
+        const gameWebContents = this.observer['webContents'];
+        if (gameWebContents) {
+          // Ejecutamos un script rápido para decidir qué carta elegir (1, 2 o 3)
+          const bestKey = await gameWebContents.executeJavaScript(`
+            (() => {
+              try {
+                const cards = document.querySelectorAll('.card, [class*="upgrade"], [class*="option"]');
+                for (let i = 0; i < cards.length; i++) {
+                  const text = (cards[i].textContent || '').toLowerCase();
+                  // Buscamos palabras clave de subida de nivel. Ajusta 'nvl', 'lvl' si el juego usa otra.
+                  if (text.includes('nvl') || text.includes('lvl') || text.includes('nivel') || text.includes('up')) {
+                    return String(i + 1);
+                  }
+                }
+                return '1'; // Si todas son nuevas, cogemos la primera por defecto
+              } catch (e) {
+                return '1';
+              }
+            })();
+          `).catch(() => '1');
+
+          logger.info(`Subida de nivel: Seleccionando carta ${bestKey} (priorizando mejora existente)...`);
+          gameWebContents.sendInputEvent({ type: 'keyDown', keyCode: bestKey });
+          setTimeout(() => gameWebContents.sendInputEvent({ type: 'keyUp', keyCode: bestKey }), 50);
+        }
+        await new Promise(r => setTimeout(r, 800)); 
+        this.consecutiveErrors = 0;
+        return;
+      }
+      // --- FIN DE INTERVENCIÓN ---
+
+      // 5. Decide (Solo llegará aquí si currentScreen === PLAYING)
       const action = this.decision.decide(gameState);
 
       // 6. Execute
@@ -187,10 +233,6 @@ export class AutomationEngine {
         this.consecutiveErrors = 0;
       }
 
-      // Log periodically
-      if (this.consecutiveErrors === 0) {
-        logger.debug(`Action: ${action.type} - ${action.reason}`);
-      }
     } catch (err) {
       this.consecutiveErrors++;
       logger.error(`Loop error (${this.consecutiveErrors}/${this.config.automation.maxConsecutiveErrors})`, err);

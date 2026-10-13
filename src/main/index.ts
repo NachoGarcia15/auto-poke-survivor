@@ -64,12 +64,39 @@ class Application {
       },
     });
 
+    this.mainWindow.once('ready-to-show', () => {
+      logger.info('Main window ready-to-show');
+      this.mainWindow?.show();
+      this.mainWindow?.focus();
+    });
+
+    this.mainWindow.on('show', () => {
+      logger.info('Main window SHOW event');
+    });
+
+    this.mainWindow.on('hide', () => {
+      logger.info('Main window HIDE event');
+    });
+
+    this.mainWindow.webContents.on('did-fail-load', (_event, code, description) => {
+      logger.error(`Control panel load failed: ${code} - ${description}`);
+    });
+
+    this.mainWindow.webContents.on('render-process-gone', (_event, details) => {
+      logger.error('Control panel renderer exited', details);
+    });
+
     logger.setWindow(this.mainWindow);
     this.automation.setMainWindow(this.mainWindow);
 
     // Load the control panel UI
     const htmlPath = path.join(__dirname, '..', 'renderer', 'index.html');
-    this.mainWindow.loadFile(htmlPath);
+    this.mainWindow.loadFile(htmlPath).catch((err) => {
+      logger.error('Failed to load control panel', err);
+    });
+
+    this.mainWindow.show();
+    this.mainWindow.focus();
 
     // Create game BrowserView
     this.createGameView();
@@ -88,6 +115,27 @@ class Application {
     });
 
     logger.info('Main window created');
+
+    setTimeout(() => {
+      if (!this.mainWindow || this.mainWindow.isDestroyed()) {
+        console.error('[WINDOW DIAG] Main window is missing or destroyed');
+        return;
+      }
+
+      console.log('[WINDOW DIAG]', {
+        visible: this.mainWindow.isVisible(),
+        minimized: this.mainWindow.isMinimized(),
+        focused: this.mainWindow.isFocused(),
+        bounds: this.mainWindow.getBounds(),
+        title: this.mainWindow.getTitle(),
+        url: this.mainWindow.webContents.getURL(),
+        windows: BrowserWindow.getAllWindows().length,
+      });
+
+      this.mainWindow.restore();
+      this.mainWindow.show();
+      this.mainWindow.focus();
+    }, 3000);
   }
 
   private createGameView(): void {

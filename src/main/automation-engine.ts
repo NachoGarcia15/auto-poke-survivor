@@ -12,6 +12,7 @@ import { GameObserver } from './game-observer';
 import { InputController } from './input-controller';
 import { DecisionEngine } from './decision-engine';
 import { StatsManager } from './stats-manager';
+import { RunManager } from './run-manager';
 import { logger } from './logger';
 
 /**
@@ -28,13 +29,12 @@ export class AutomationEngine {
   private input: InputController;
   private decision: DecisionEngine;
   private stats: StatsManager;
+  private runManager: RunManager;
   private config: AppConfig;
   private mainWindow: BrowserWindow | null = null;
 
   private loopTimer: NodeJS.Timeout | null = null;
   private consecutiveErrors = 0;
-  private runCount = 0;
-  private inRun = false;
   private lastScreen: GameScreen = GameScreen.UNKNOWN;
   private lastScreenChange = Date.now();
   private stallCheckTimer: NodeJS.Timeout | null = null;
@@ -45,6 +45,7 @@ export class AutomationEngine {
     this.observer = new GameObserver();
     this.input = new InputController();
     this.decision = new DecisionEngine(config.strategy);
+    this.runManager = new RunManager(stats, config);
   }
 
   setWebContents(webContents: WebContents): void {
@@ -59,6 +60,7 @@ export class AutomationEngine {
   updateConfig(config: AppConfig): void {
     this.config = config;
     this.decision.updateConfig(config.strategy);
+    this.runManager.updateConfig(config);
   }
 
   getState(): AutomationState {
@@ -108,14 +110,11 @@ export class AutomationEngine {
     // Release all held keys - CRITICAL
     await this.input.releaseAllKeys();
 
-    // End current run if active
-    if (this.inRun) {
-      const run = this.stats.endRun('stopped');
-      if (run) {
-        logger.info('Run ended (stopped)', { duration: run.duration });
-        this.emitRunCompleted(run);
-      }
-      this.inRun = false;
+    // End current run if active via RunManager
+    const run = this.runManager.forceStop();
+    if (run) {
+      logger.info('Run ended (stopped)', { duration: run.duration });
+      this.emitRunCompleted(run);
     }
 
     this.setState(AutomationState.STOPPED);
@@ -164,8 +163,16 @@ export class AutomationEngine {
       // 2. Track screen changes
       this.trackScreenChange(gameState);
 
-      // 3. Manage runs
-      this.manageRun(gameState);
+      // 3. Manage runs via RunManager
+      const runEvent = this.runManager.processState(gameState);
+      if (runEvent?.run && (runEvent.type === 'run_ended' || runEvent.type === 'max_runs_reached')) {
+        this.emitRunCompleted(runEvent.run);
+      }
+      if (runEvent?.type === 'max_runs_reached') {
+        logger.info('Max runs reached, stopping automation');
+        await this.stop();
+        return;
+      }
 
       // 4. Emit state to UI
       this.emitGameState(gameState);
@@ -205,66 +212,6 @@ export class AutomationEngine {
       logger.info(`Screen changed: ${this.lastScreen} -> ${currentScreen}`);
       this.lastScreen = currentScreen;
       this.lastScreenChange = Date.now();
-    }
-  }
-
-  /**
-   * Manage run lifecycle based on game state transitions
-   */
-  private manageRun(state: GameState): void {
-    const screen = state.screen.value;
-
-    // Start a run when entering gameplay
-    if (
-      screen === GameScreen.PLAYING &&
-      !this.inRun
-    ) {
-      const currency = state.currency?.value ?? null;
-      this.stats.startRun(undefined, currency !== null ? currency : undefined);
-      this.inRun = true;
-      this.runCount++;
-      logger.info(`Run #${this.runCount} started`);
-    }
-
-    // Update run stats during gameplay
-    if (this.inRun && screen === GameScreen.PLAYING) {
-      this.stats.updateCurrentRun({
-        killCount: state.killCount?.value ?? null,
-        maxLevel: state.player?.level?.value ?? null,
-        maxTimer: state.timer?.value ?? null,
-      });
-    }
-
-    // End run on game over
-    if (
-      (screen === GameScreen.GAME_OVER || screen === GameScreen.RESULTS) &&
-      this.inRun
-    ) {
-      const run = this.stats.endRun('died', {
-        currencyAfter: state.currency?.value ?? null,
-        killCount: state.killCount?.value ?? null,
-        maxLevel: state.player?.level?.value ?? null,
-        maxTimer: state.timer?.value ?? null,
-      });
-      this.inRun = false;
-
-      if (run) {
-        logger.info(`Run #${this.runCount} ended`, {
-          duration: run.duration,
-          result: run.result,
-          kills: run.killCount,
-        });
-        this.emitRunCompleted(run);
-      }
-
-      // Check if we should stop
-      if (
-        this.config.automation.maxRuns > 0 &&
-        this.runCount >= this.config.automation.maxRuns
-      ) {
-        logger.info('Max runs reached, stopping');
-        this.stop();
-      }
     }
   }
 

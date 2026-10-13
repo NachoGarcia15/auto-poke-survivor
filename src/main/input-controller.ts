@@ -150,27 +150,24 @@ export class InputController {
   }
 
   /**
-   * Select an upgrade by clicking on it.
-   * The exact method depends on the game's upgrade UI.
+   * Select an upgrade by clicking the card or sending numeric keys 1, 2, 3
    */
   private async selectUpgrade(index: number): Promise<void> {
     if (!this.webContents || this.webContents.isDestroyed()) return;
 
-    // Try clicking the upgrade via JavaScript
+    // 1. Try DOM click on the specific level-up card in #scr-levelup
     await this.webContents.executeJavaScript(`
       (function() {
-        // Try to find upgrade buttons/options
-        const options = document.querySelectorAll('[class*="upgrade"] button, [class*="upgrade"] [class*="option"], [class*="level-up"] button');
-        if (options.length > ${index}) {
-          options[${index}].click();
+        const levelupCards = document.querySelectorAll('#scr-levelup .card, .levelup-card, [class*="upgrade"] .card, [class*="upgrade"] button');
+        if (levelupCards.length > ${index}) {
+          (levelupCards[${index}]).click();
           return true;
         }
-        // Fallback: try numbered key
         return false;
       })()
-    `);
+    `).catch(() => false);
 
-    // Also try pressing number key as fallback
+    // 2. Also send synthetic number key event (1, 2, 3) which G.Game handles natively
     const numKey = String(index + 1);
     await this.sendKey(numKey, 'keyDown');
     await this.delay(50);

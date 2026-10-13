@@ -11,12 +11,15 @@ import {
 } from '../shared/types';
 import { logger } from './logger';
 
+import { UpgradeSelector } from './upgrade-selector';
+
 /**
  * DecisionEngine - Pure logic module that maps game state to actions.
  * Deterministic and testable.
  */
 export class DecisionEngine {
   private config: StrategyConfig;
+  private upgradeSelector: UpgradeSelector;
   private moveAngle = 0;
   private lastMoveChange = 0;
   private moveChangeInterval = 2000; // Change direction every 2s
@@ -24,10 +27,12 @@ export class DecisionEngine {
 
   constructor(config: StrategyConfig) {
     this.config = config;
+    this.upgradeSelector = new UpgradeSelector(config);
   }
 
   updateConfig(config: StrategyConfig): void {
     this.config = config;
+    this.upgradeSelector.updateConfig(config);
   }
 
   /**
@@ -99,12 +104,12 @@ export class DecisionEngine {
       return { type: ActionType.WAIT, reason: 'No upgrades visible yet' };
     }
 
-    const selectedIndex = this.selectUpgrade(upgrades);
+    const choice = this.upgradeSelector.select(upgrades);
 
     return {
       type: ActionType.SELECT_UPGRADE,
-      upgradeIndex: selectedIndex,
-      reason: `Selecting upgrade: ${upgrades[selectedIndex]?.name ?? `option ${selectedIndex}`}`,
+      upgradeIndex: choice.index,
+      reason: `Selecting upgrade: ${choice.cardName} (${choice.reason})`,
     };
   }
 
@@ -233,33 +238,5 @@ export class DecisionEngine {
 
     return nearest;
   }
-
-  /**
-   * Select the best upgrade based on configured priorities
-   */
-  private selectUpgrade(upgrades: UpgradeOption[]): number {
-    if (upgrades.length === 0) return 0;
-
-    // Check against priority list
-    for (const priority of this.config.upgradePriorities) {
-      const index = upgrades.findIndex(
-        (u) =>
-          u.name.toLowerCase().includes(priority.toLowerCase()) ||
-          u.description.toLowerCase().includes(priority.toLowerCase())
-      );
-      if (index >= 0) return index;
-    }
-
-    // Prefer higher rarity if available
-    const rarityOrder = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
-    for (const rarity of rarityOrder) {
-      const index = upgrades.findIndex(
-        (u) => u.rarity?.toLowerCase() === rarity
-      );
-      if (index >= 0) return index;
-    }
-
-    // Default: pick the first option
-    return 0;
-  }
 }
+

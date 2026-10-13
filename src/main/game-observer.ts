@@ -74,6 +74,10 @@ export class GameObserver {
    * NOTE: Selectors and global variable access will be refined after
    * researching the actual game source code.
    */
+  /**
+   * JavaScript to execute in the game context to extract state.
+   * Leverages window.G (the verified global state container) with DOM fallbacks.
+   */
   private getObservationScript(): string {
     return `
       (function() {
@@ -87,78 +91,106 @@ export class GameObserver {
           timer: null,
           killCount: null,
           currency: null,
+          source: 'dom',
         };
 
         try {
-          // Detect game screen based on visible elements
-          // These selectors will be refined based on actual game research
+          const G = window.G;
 
-          // Check for common game canvas
-          const canvas = document.querySelector('canvas');
+          // 1. Direct inspection via window.G (Verified engine singleton)
+          if (G && G.Game) {
+            result.source = 'G';
+            const gState = G.Game.state; // 'ui' | 'playing' | 'levelup' | 'choice' | 'held' | 'paused' | 'over'
 
-          // Check for game-specific elements
-          // Look for upgrade selection UI
-          const upgradePanel = document.querySelector('[class*="upgrade"], [class*="level-up"], [id*="upgrade"]');
-          // Look for game over / results screen
-          const gameOver = document.querySelector('[class*="game-over"], [class*="gameover"], [class*="result"], [id*="game-over"]');
-          // Look for main menu
-          const mainMenu = document.querySelector('[class*="menu"], [class*="start"], [id*="menu"]');
-          // Look for pause screen
-          const pauseScreen = document.querySelector('[class*="pause"], [id*="pause"]');
+            if (gState === 'playing') {
+              result.screen = 'playing';
+            } else if (gState === 'levelup' || gState === 'choice') {
+              result.screen = 'upgrade_select';
+            } else if (gState === 'paused' || gState === 'held') {
+              result.screen = 'paused';
+            } else if (gState === 'over') {
+              result.screen = 'game_over';
+            } else if (gState === 'ui') {
+              const loginScr = document.getElementById('scr-login');
+              const starterScr = document.getElementById('scr-starters');
+              if (starterScr && !starterScr.classList.contains('hidden')) {
+                result.screen = 'character_select';
+              } else if (loginScr && !loginScr.classList.contains('hidden')) {
+                result.screen = 'main_menu';
+              } else {
+                result.screen = 'main_menu';
+              }
+            }
 
-          // Try to access game state through global variables
-          // Common patterns in browser games
-          if (typeof window.game !== 'undefined') {
-            result._gameGlobal = true;
+            // Player state from G.Game.pl or G.Game.player
+            const pl = G.Game.pl || G.Game.player;
+            if (pl) {
+              result.player = {
+                x: pl.x,
+                y: pl.y,
+                health: pl.hp,
+                maxHealth: pl.maxHp || pl.hpMax,
+                level: pl.lvl,
+                exp: pl.xp,
+              };
+            }
+
+            // Timer & Kills
+            if (typeof G.Game.time === 'number') {
+              result.timer = Math.floor(G.Game.time);
+            }
+            if (typeof G.Game.kills === 'number') {
+              result.killCount = G.Game.kills;
+            }
+
+            // Currencies from G.DB.save
+            if (G.DB && G.DB.save && typeof G.DB.save.coins === 'number') {
+              result.currency = G.DB.save.coins;
+            }
+
+            // Upgrades / level-up cards from G.LevelUp or active DOM cards
+            if (G.LevelUp && Array.isArray(G.LevelUp.cards)) {
+              result.upgrades = G.LevelUp.cards.map((c, idx) => ({
+                name: c.name || c.id || 'Upgrade',
+                description: c.desc || '',
+                rarity: c.rarity || 'common',
+              }));
+            }
+
+            // Active enemies from G.EnemyMgr
+            if (G.EnemyMgr) {
+              const enemies = typeof G.EnemyMgr.all === 'function' ? G.EnemyMgr.all() : (G.EnemyMgr.list || []);
+              if (Array.isArray(enemies)) {
+                result.enemies = enemies.slice(0, 50).map(e => ({
+                  x: e.x,
+                  y: e.y,
+                  health: e.hp,
+                }));
+              }
+            }
+
+            return result;
           }
-          if (typeof window.Phaser !== 'undefined') {
-            result._phaser = true;
-          }
 
-          // Check current URL for routing-based state
-          const path = window.location.pathname;
-          const hash = window.location.hash;
+          // 2. Fallback: DOM inspection if window.G is not yet initialized
+          const canvas = document.querySelector('canvas#game');
+          const loginScr = document.getElementById('scr-login');
+          const menuScr = document.getElementById('scr-menu');
+          const levelupScr = document.getElementById('scr-levelup');
+          const overScr = document.getElementById('scr-over');
+          const pauseScr = document.getElementById('scr-pause');
 
-          if (gameOver) {
+          if (overScr && !overScr.classList.contains('hidden')) {
             result.screen = 'game_over';
-          } else if (upgradePanel && window.getComputedStyle(upgradePanel).display !== 'none') {
+          } else if (levelupScr && !levelupScr.classList.contains('hidden')) {
             result.screen = 'upgrade_select';
-          } else if (pauseScreen && window.getComputedStyle(pauseScreen).display !== 'none') {
+          } else if (pauseScr && !pauseScr.classList.contains('hidden')) {
             result.screen = 'paused';
-          } else if (canvas) {
-            // Canvas present, likely playing or in-game
+          } else if (canvas && menuScr && menuScr.classList.contains('hidden') && loginScr && loginScr.classList.contains('hidden')) {
             result.screen = 'playing';
-          } else if (mainMenu) {
+          } else {
             result.screen = 'main_menu';
           }
-
-          // Try to find timer display
-          const timerEl = document.querySelector('[class*="timer"], [class*="time"], [id*="timer"]');
-          if (timerEl) {
-            const timerText = timerEl.textContent || '';
-            const match = timerText.match(/(\\d+):(\\d+)/);
-            if (match) {
-              result.timer = parseInt(match[1]) * 60 + parseInt(match[2]);
-            }
-          }
-
-          // Try to find kill count
-          const killEl = document.querySelector('[class*="kill"], [class*="score"], [id*="kill"]');
-          if (killEl) {
-            const num = parseInt(killEl.textContent || '');
-            if (!isNaN(num)) result.killCount = num;
-          }
-
-          // Try to find currency/coin display
-          const currencyEl = document.querySelector('[class*="coin"], [class*="currency"], [class*="gold"], [id*="currency"]');
-          if (currencyEl) {
-            const num = parseInt((currencyEl.textContent || '').replace(/[^0-9]/g, ''));
-            if (!isNaN(num)) result.currency = num;
-          }
-
-          // Enumerate visible elements for debugging
-          result._bodyClasses = document.body.className;
-          result._visibleIds = Array.from(document.querySelectorAll('[id]')).slice(0, 20).map(e => e.id);
 
         } catch (e) {
           result._error = e.message;
@@ -190,30 +222,44 @@ export class GameObserver {
     };
 
     const screen = screenMap[raw.screen] ?? GameScreen.UNKNOWN;
+    const isVerified = raw.source === 'G';
     const confidence =
-      screen === GameScreen.UNKNOWN ? Confidence.UNKNOWN : Confidence.ESTIMATED;
+      screen === GameScreen.UNKNOWN
+        ? Confidence.UNKNOWN
+        : isVerified
+        ? Confidence.VERIFIED
+        : Confidence.ESTIMATED;
+
+    const valConf = isVerified ? Confidence.VERIFIED : Confidence.ESTIMATED;
 
     const player: PlayerState | null =
       raw.player
         ? {
             position: raw.player.x != null
-              ? observed({ x: raw.player.x, y: raw.player.y }, Confidence.ESTIMATED)
+              ? observed({ x: raw.player.x, y: raw.player.y }, valConf)
               : null,
             health: raw.player.health != null
-              ? observed(raw.player.health, Confidence.ESTIMATED)
+              ? observed(raw.player.health, valConf)
               : null,
             maxHealth: raw.player.maxHealth != null
-              ? observed(raw.player.maxHealth, Confidence.ESTIMATED)
+              ? observed(raw.player.maxHealth, valConf)
               : null,
             level: raw.player.level != null
-              ? observed(raw.player.level, Confidence.ESTIMATED)
+              ? observed(raw.player.level, valConf)
               : null,
             experience: raw.player.exp != null
-              ? observed(raw.player.exp, Confidence.ESTIMATED)
+              ? observed(raw.player.exp, valConf)
               : null,
             experienceToNext: null,
           }
         : null;
+
+    const enemies: EnemyInfo[] = Array.isArray(raw.enemies)
+      ? raw.enemies.map((e: any) => ({
+          position: { x: e.x, y: e.y },
+          health: e.health,
+        }))
+      : [];
 
     const upgrades: UpgradeOption[] = Array.isArray(raw.upgrades)
       ? raw.upgrades.map((u: any, i: number) => ({
@@ -228,11 +274,11 @@ export class GameObserver {
     return {
       screen: observed(screen, confidence),
       player,
-      enemies: null,
-      upgrades: upgrades.length > 0 ? observed(upgrades, Confidence.ESTIMATED) : null,
-      timer: raw.timer != null ? observed(raw.timer, Confidence.ESTIMATED) : null,
-      killCount: raw.killCount != null ? observed(raw.killCount, Confidence.ESTIMATED) : null,
-      currency: raw.currency != null ? observed(raw.currency, Confidence.ESTIMATED) : null,
+      enemies: enemies.length > 0 ? observed(enemies, valConf) : null,
+      upgrades: upgrades.length > 0 ? observed(upgrades, valConf) : null,
+      timer: raw.timer != null ? observed(raw.timer, valConf) : null,
+      killCount: raw.killCount != null ? observed(raw.killCount, valConf) : null,
+      currency: raw.currency != null ? observed(raw.currency, valConf) : null,
       observedAt: Date.now(),
     };
   }

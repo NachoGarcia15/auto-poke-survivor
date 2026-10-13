@@ -1,0 +1,28 @@
+node_modules/
+dist/
+out/
+build/
+*.log
+.env
+.env.*
+
+# Electron user data (session, cookies, etc.)
+user-data/
+browser-data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Test coverage
+coverage/
+
+# Run history (may contain personal data)
+data/runs/
+data/stats/

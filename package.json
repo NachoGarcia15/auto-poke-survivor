@@ -1,0 +1,24 @@
+{
+  "name": "auto-poke-survivor",
+  "version": "0.1.0",
+  "description": "Desktop automation companion for PokéSurvivor",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "copy-assets": "node -e \"const fs=require('fs');const p=require('path');const d='dist/renderer';if(!fs.existsSync(d))fs.mkdirSync(d,{recursive:true});fs.cpSync('src/renderer','dist/renderer',{recursive:true});\"",
+    "build": "tsc && npm run copy-assets",
+    "start": "npm run build && electron .",
+    "dev": "tsc && npm run copy-assets && electron .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "^33.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

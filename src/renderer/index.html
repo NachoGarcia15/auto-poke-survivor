@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';">
+  <title>AutoPokeSurvivor</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .control-panel {
+      width: 320px;
+      height: 100vh;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+      background: #16213e;
+      border-right: 2px solid #0f3460;
+    }
+
+    .header {
+      text-align: center;
+      padding: 8px 0;
+    }
+
+    .header h1 {
+      font-size: 18px;
+      color: #e94560;
+      margin-bottom: 4px;
+    }
+
+    .header .subtitle {
+      font-size: 11px;
+      color: #888;
+    }
+
+    .section {
+      background: #1a1a2e;
+      border-radius: 8px;
+      padding: 12px;
+      border: 1px solid #0f3460;
+    }
+
+    .section h2 {
+      font-size: 13px;
+      color: #e94560;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .status-label {
+      color: #aaa;
+    }
+
+    .status-value {
+      font-weight: bold;
+      color: #4ecdc4;
+    }
+
+    .status-value.error {
+      color: #e94560;
+    }
+
+    .status-value.warning {
+      color: #f9a825;
+    }
+
+    .status-value.success {
+      color: #4ecdc4;
+    }
+
+    .status-indicator {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+
+    .status-indicator.stopped { background: #666; }
+    .status-indicator.running { background: #4ecdc4; animation: pulse 1.5s infinite; }
+    .status-indicator.error { background: #e94560; }
+    .status-indicator.starting { background: #f9a825; animation: pulse 0.8s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+    }
+
+    button {
+      flex: 1;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-start {
+      background: #4ecdc4;
+      color: #1a1a2e;
+    }
+
+    .btn-stop {
+      background: #e94560;
+      color: white;
+    }
+
+    .btn-emergency {
+      background: #ff0000;
+      color: white;
+      font-size: 11px;
+      letter-spacing: 0;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .stat-item {
+      background: #16213e;
+      padding: 8px;
+      border-radius: 4px;
+      text-align: center;
+    }
+
+    .stat-item .value {
+      font-size: 16px;
+      font-weight: bold;
+      color: #4ecdc4;
+    }
+
+    .stat-item .label {
+      font-size: 10px;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    .log-container {
+      flex: 1;
+      min-height: 100px;
+      max-height: 200px;
+      overflow-y: auto;
+      background: #0d1117;
+      border-radius: 4px;
+      padding: 8px;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .log-entry {
+      padding: 1px 0;
+      word-wrap: break-word;
+    }
+
+    .log-entry .time {
+      color: #555;
+      margin-right: 4px;
+    }
+
+    .log-entry.info { color: #8b949e; }
+    .log-entry.warn { color: #f9a825; }
+    .log-entry.error { color: #e94560; }
+    .log-entry.debug { color: #555; }
+
+    .game-state-display {
+      font-size: 12px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+
+    .tab {
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      background: #16213e;
+      color: #888;
+      border: 1px solid transparent;
+    }
+
+    .tab.active {
+      background: #0f3460;
+      color: #4ecdc4;
+      border-color: #4ecdc4;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="control-panel">
+    <div class="header">
+      <h1>⚡ AutoPokeSurvivor</h1>
+      <div class="subtitle">v0.1.0 — Automation Companion</div>
+    </div>
+
+    <!-- Status Section -->
+    <div class="section">
+      <h2>Status</h2>
+      <div class="status-row">
+        <span class="status-label">Automation:</span>
+        <span class="status-value" id="automation-status">
+          <span class="status-indicator stopped"></span>Stopped
+        </span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Game Screen:</span>
+        <span class="status-value" id="game-screen">—</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Current Run:</span>
+        <span class="status-value" id="current-run">—</span>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="section">
+      <h2>Controls</h2>
+      <div class="controls">
+        <button class="btn-start" id="btn-start" onclick="startAutomation()">▶ Start</button>
+        <button class="btn-stop" id="btn-stop" onclick="stopAutomation()" disabled>■ Stop</button>
+      </div>
+      <div class="controls" style="margin-top: 8px;">
+        <button class="btn-emergency" id="btn-emergency" onclick="emergencyStop()">🛑 EMERGENCY STOP</button>
+      </div>
+    </div>
+
+    <!-- Tabs: Stats / Game / Config -->
+    <div class="section" style="flex: 1; display: flex; flex-direction: column;">
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab('stats')">Stats</div>
+        <div class="tab" onclick="switchTab('game')">Game</div>
+        <div class="tab" onclick="switchTab('log')">Log</div>
+      </div>
+
+      <!-- Stats Tab -->
+      <div class="tab-content active" id="tab-stats">
+        <div class="stat-grid">
+          <div class="stat-item">
+            <div class="value" id="stat-total-runs">0</div>
+            <div class="label">Total Runs</div>
+          </div>
+          <div class="stat-item">
+            <div class="value" id="stat-completed">0</div>
+            <div class="label">Completed</div>
+          </div>
+          <div class="stat-item">
+            <div class="value" id="stat-avg-duration">—</div>
+            <div class="label">Avg Duration</div>
+          </div>
+          <div class="stat-item">
+            <div class="value" id="stat-currency-hr">—</div>
+            <div class="label">Currency/hr</div>
+          </div>
+          <div class="stat-item">
+            <div class="value" id="stat-avg-kills">—</div>
+            <div class="label">Avg Kills</div>
+          </div>
+          <div class="stat-item">
+            <div class="value" id="stat-avg-level">—</div>
+            <div class="label">Avg Level</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Game Tab -->
+      <div class="tab-content" id="tab-game">
+        <div class="game-state-display">
+          <div class="status-row">
+            <span class="status-label">Timer:</span>
+            <span class="status-value" id="game-timer">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Level:</span>
+            <span class="status-value" id="game-level">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Kills:</span>
+            <span class="status-value" id="game-kills">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Health:</span>
+            <span class="status-value" id="game-health">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Currency:</span>
+            <span class="status-value" id="game-currency">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Log Tab -->
+      <div class="tab-content" id="tab-log">
+        <div class="log-container" id="log-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // @ts-ignore - API injected by preload
+    const api = window.autoPokeApi;
+    let isRunning = false;
+
+    // Tab switching
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-' + tabName).classList.add('active');
+      event.target.classList.add('active');
+    }
+
+    // Controls
+    async function startAutomation() {
+      try {
+        await api.startAutomation();
+        addLog('info', 'Automation started');
+      } catch (err) {
+        addLog('error', 'Failed to start: ' + err.message);
+      }
+    }
+
+    async function stopAutomation() {
+      try {
+        await api.stopAutomation();
+        addLog('info', 'Automation stopped');
+      } catch (err) {
+        addLog('error', 'Failed to stop: ' + err.message);
+      }
+    }
+
+    async function emergencyStop() {
+      try {
+        await api.stopAutomation();
+        addLog('warn', 'EMERGENCY STOP activated');
+      } catch (err) {
+        addLog('error', 'Emergency stop failed: ' + err.message);
+      }
+    }
+
+    // Event listeners
+    api.onAutomationStateChanged((state) => {
+      isRunning = state === 'running';
+      const statusEl = document.getElementById('automation-status');
+      const startBtn = document.getElementById('btn-start');
+      const stopBtn = document.getElementById('btn-stop');
+
+      const stateDisplay = {
+        stopped: { text: 'Stopped', class: 'stopped' },
+        starting: { text: 'Starting...', class: 'starting' },
+        running: { text: 'Running', class: 'running' },
+        pausing: { text: 'Stopping...', class: 'starting' },
+        error: { text: 'Error', class: 'error' },
+      };
+
+      const display = stateDisplay[state] || { text: state, class: 'stopped' };
+      statusEl.innerHTML = '<span class="status-indicator ' + display.class + '"></span>' + display.text;
+
+      startBtn.disabled = isRunning;
+      stopBtn.disabled = !isRunning;
+    });
+
+    api.onGameStateUpdated((state) => {
+      if (!state) return;
+
+      // Update screen display
+      const screenEl = document.getElementById('game-screen');
+      if (state.screen) {
+        screenEl.textContent = state.screen.value || 'unknown';
+      }
+
+      // Update game data
+      if (state.timer && state.timer.value != null) {
+        const mins = Math.floor(state.timer.value / 60);
+        const secs = state.timer.value % 60;
+        document.getElementById('game-timer').textContent = mins + ':' + String(secs).padStart(2, '0');
+      }
+      if (state.player && state.player.level) {
+        document.getElementById('game-level').textContent = String(state.player.level.value);
+      }
+      if (state.killCount && state.killCount.value != null) {
+        document.getElementById('game-kills').textContent = String(state.killCount.value);
+      }
+      if (state.player && state.player.health) {
+        document.getElementById('game-health').textContent = String(state.player.health.value);
+      }
+      if (state.currency && state.currency.value != null) {
+        document.getElementById('game-currency').textContent = String(state.currency.value);
+      }
+    });
+
+    api.onLogEvent((event) => {
+      addLog(event.level, event.message);
+    });
+
+    api.onRunCompleted((run) => {
+      addLog('info', 'Run completed: ' + run.result + ' (duration: ' + formatDuration(run.duration) + ')');
+      refreshStats();
+    });
+
+    api.onError((error) => {
+      addLog('error', error);
+    });
+
+    // Log display
+    function addLog(level, message) {
+      const container = document.getElementById('log-container');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry ' + level;
+      const time = new Date().toLocaleTimeString();
+      entry.innerHTML = '<span class="time">' + time + '</span> ' + escapeHtml(message);
+      container.appendChild(entry);
+
+      // Auto-scroll to bottom
+      container.scrollTop = container.scrollHeight;
+
+      // Limit log entries
+      while (container.children.length > 200) {
+        container.removeChild(container.firstChild);
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function formatDuration(ms) {
+      if (!ms) return '—';
+      const secs = Math.floor(ms / 1000);
+      const mins = Math.floor(secs / 60);
+      return mins + ':' + String(secs % 60).padStart(2, '0');
+    }
+
+    // Stats refresh
+    async function refreshStats() {
+      try {
+        const stats = await api.getStats();
+        if (stats) {
+          document.getElementById('stat-total-runs').textContent = String(stats.totalRuns);
+          document.getElementById('stat-completed').textContent = String(stats.completedRuns);
+          document.getElementById('stat-avg-duration').textContent = formatDuration(stats.averageDuration);
+          document.getElementById('stat-currency-hr').textContent = stats.currencyPerHour != null ? Math.round(stats.currencyPerHour).toString() : '—';
+          document.getElementById('stat-avg-kills').textContent = stats.averageKills != null ? Math.round(stats.averageKills).toString() : '—';
+          document.getElementById('stat-avg-level').textContent = stats.averageLevel != null ? Math.round(stats.averageLevel).toString() : '—';
+        }
+      } catch (err) {
+        console.error('Failed to refresh stats:', err);
+      }
+    }
+
+    // Initial load
+    refreshStats();
+    addLog('info', 'AutoPokeSurvivor ready. Login to PokéSurvivor in the game window, then click Start.');
+  </script>
+</body>
+</html>
